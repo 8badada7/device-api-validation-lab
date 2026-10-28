@@ -1,0 +1,24 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local Python and Conda environments
+.venv/
+venv/
+env/
+.conda/
+
+# Local environment variables; keep the non-sensitive example
+.env
+.env.*
+!.env.example
+
+# Generated test logs
+logs/*.log
+!logs/.gitkeep
+
+# Generated test reports, including XML, HTML, and assets
+reports/*.xml
+reports/*
+!reports/.gitkeep
