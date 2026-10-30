@@ -9,15 +9,79 @@ from uuid import uuid4
 import pytest
 import requests
 
+from evidence import EvidenceRecorder, exception_details
 from src.device_api_client import DeviceApiClient
+
+
+EVIDENCE_KEY = pytest.StashKey[EvidenceRecorder]()
+
+
+@pytest.fixture
+def fault_evidence(request):
+    recorder = EvidenceRecorder(request.node.nodeid)
+    request.node.stash[EVIDENCE_KEY] = recorder
+    return recorder
+
+
+def _evidence_for(request):
+    if "fault_evidence" in request.fixturenames:
+        return request.getfixturevalue("fault_evidence")
+    return None
+
+
+def _cleanup_evidence(recorder, component, **facts):
+    if recorder is not None:
+        recorder.record_cleanup(component, **facts)
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    result = yield
+    report = result.get_result()
+    recorder = item.stash.get(EVIDENCE_KEY, None)
+    if recorder is None:
+        return
+
+    try:
+        recorder.record_phase(
+            report.when,
+            report.outcome,
+            report.duration,
+            error=call.excinfo.value if call.excinfo is not None else None,
+            start=report.start,
+            stop=report.stop,
+        )
+        if report.when == "teardown":
+            output_dir = Path(__file__).resolve().parents[2] / "reports" / "evidence"
+            recorder.finish_and_write(output_dir)
+    except Exception as error:
+        # Alter the real report before pytest logs it; do not raise an INTERNALERROR.
+        original = str(report.longrepr) if report.failed else ""
+        message = (
+            f"Fault evidence recording failed ({type(error).__name__}); "
+            "a complete JSON file in reports/evidence is not confirmed."
+        )
+        report.outcome = "failed"
+        report.longrepr = f"{original}\n{message}".strip()
+        try:
+            recorder.record_phase(
+                report.when, report.outcome, report.duration, error=error,
+                start=report.start, stop=report.stop,
+            )
+        except Exception as update_error:
+            report.longrepr += (
+                "\nEvidence phase update also failed "
+                f"({type(update_error).__name__})."
+            )
 
 
 DUT_STARTUP_CODE = """
 import sys
 import time
+from threading import Lock
 
-from flask import jsonify
-from dut.app import app
+from flask import jsonify, request
+from dut.app import app, write
 
 token = sys.argv[1]
 
@@ -34,6 +98,54 @@ def slow_response():
 @app.get("/__test__/server-error")
 def server_error_response():
     return jsonify({"error": "simulated_internal_error"}), 500
+
+@app.post("/__test__/write-delayed")
+def write_delayed():
+    response = app.make_response(write())
+    if response.status_code == 200:
+        # The register has already been written before delaying the response.
+        time.sleep(1.0)
+    return response
+
+retry_health_counts = dict.fromkeys(
+    (
+        "immediate_200",
+        "recover_after_two_503",
+        "always_503",
+        "always_400",
+        "always_500",
+    ),
+    0,
+)
+retry_health_lock = Lock()
+
+@app.get("/__test__/retry-health")
+def retry_health():
+    scenario = request.args.get("scenario")
+    with retry_health_lock:
+        if scenario not in retry_health_counts:
+            return jsonify({"error": "invalid_scenario"}), 400
+        retry_health_counts[scenario] += 1
+        count = retry_health_counts[scenario]
+
+    if scenario == "immediate_200" or (
+        scenario == "recover_after_two_503" and count >= 3
+    ):
+        return jsonify({"status": "ok"}), 200
+    if scenario == "always_400":
+        return jsonify({"error": "invalid_request"}), 400
+    if scenario == "always_500":
+        return jsonify({"error": "simulated_internal_error"}), 500
+    return jsonify({"error": "temporarily_unavailable"}), 503
+
+@app.get("/__test__/retry-stats")
+def retry_stats():
+    scenario = request.args.get("scenario")
+    with retry_health_lock:
+        if scenario not in retry_health_counts:
+            return jsonify({"error": "invalid_scenario"}), 400
+        count = retry_health_counts[scenario]
+    return jsonify({"scenario": scenario, "request_count": count}), 200
 
 app.run(
     host="127.0.0.1",
@@ -165,10 +277,131 @@ class RecoveryDut:
 
 
 @pytest.fixture
-def recovery_dut():
+def recovery_dut(request):
+    # The opt-in recorder has no DUT dependencies, so this cannot form a cycle.
+    recorder = _evidence_for(request)
     project_root = Path(__file__).resolve().parents[2]
     dut = RecoveryDut(project_root)
     try:
         yield dut
     finally:
-        dut.stop()
+        facts = {"attempted": True, "success": False}
+        try:
+            dut.stop()
+            facts.update(
+                success=True,
+                process_started=dut.process is not None,
+                exited=dut.process is None or dut.process.poll() is not None,
+                exit_code=dut.process.returncode if dut.process is not None else None,
+            )
+        except Exception as error:
+            facts["error"] = exception_details(error)
+            raise
+        finally:
+            _cleanup_evidence(recorder, "process", **facts)
+            if recorder is not None:
+                recorder.set_state(
+                    "after", process_running=dut.process is not None and dut.process.poll() is None
+                )
+
+
+@pytest.fixture
+def preserved_recovery_register100(recovery_dut, request):
+    recorder = _evidence_for(request)
+    recovery_dut.start()
+    with closing(
+        DeviceApiClient(recovery_dut.base_url, recovery_dut.request_timeout)
+    ) as client:
+        client.session.trust_env = False
+        original_value = None
+        try:
+            connect_response = client.connect()
+            assert connect_response.status_code == 200
+            assert connect_response.json()["connected"] is True
+
+            original_response = client.read(100)
+            assert original_response.status_code == 200
+            original_data = original_response.json()
+            assert original_data["address"] == 100
+            assert type(original_data["value"]) is int
+            original_value = original_data["value"]
+            if recorder is not None:
+                recorder.set_state("before", connected=True, register100=original_value)
+                recorder.record_event(
+                    "setup",
+                    "register_snapshot",
+                    expected={"http_status": 200, "address": 100},
+                    observed={"http_status": 200, "address": 100, "value": original_value},
+                )
+
+            yield client, original_value
+        finally:
+            try:
+                if original_value is not None:
+                    facts = {
+                        "attempted": True,
+                        "original_value": original_value,
+                        "write_succeeded": False,
+                        "readback_verified": False,
+                        "success": False,
+                    }
+                    try:
+                        restore_response = client.write(100, original_value)
+                        facts["write_status"] = restore_response.status_code
+                        assert restore_response.status_code == 200
+                        restore_data = restore_response.json()
+                        facts.update(
+                            write_address=restore_data.get("address"),
+                            write_value=restore_data.get("value"),
+                        )
+                        assert restore_data == {
+                            "address": 100,
+                            "value": original_value,
+                        }
+                        facts["write_succeeded"] = True
+
+                        readback_response = client.read(100)
+                        facts["readback_status"] = readback_response.status_code
+                        assert readback_response.status_code == 200
+                        readback_data = readback_response.json()
+                        facts.update(
+                            readback_address=readback_data.get("address"),
+                            readback_value=readback_data.get("value"),
+                        )
+                        assert readback_data == {
+                            "address": 100,
+                            "value": original_value,
+                        }
+                        facts.update(readback_verified=True, success=True)
+                    except Exception as error:
+                        facts["error"] = exception_details(error)
+                        raise
+                    finally:
+                        _cleanup_evidence(recorder, "register100", **facts)
+                        if recorder is not None and "readback_value" in facts:
+                            recorder.set_state("after", register100=facts["readback_value"])
+                else:
+                    _cleanup_evidence(
+                        recorder,
+                        "register100",
+                        attempted=False,
+                        success=None,
+                        reason="original_value_unavailable",
+                    )
+            finally:
+                facts = {"attempted": True, "success": False}
+                try:
+                    disconnect_response = client.disconnect()
+                    facts["http_status"] = disconnect_response.status_code
+                    assert disconnect_response.status_code == 200
+                    disconnect_data = disconnect_response.json()
+                    facts["connected"] = disconnect_data.get("connected")
+                    assert disconnect_data["connected"] is False
+                    facts["success"] = True
+                except Exception as error:
+                    facts["error"] = exception_details(error)
+                    raise
+                finally:
+                    _cleanup_evidence(recorder, "disconnect", **facts)
+                    if recorder is not None and "connected" in facts:
+                        recorder.set_state("after", connected=facts["connected"])
