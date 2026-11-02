@@ -82,7 +82,7 @@ GitHub Actions 会在 push 到 `main`、针对 `main` 的 pull_request，以及�
 
 ## 最新测试结果
 
-M1～M4 已由项目维护者完成真实验收。M5 目前仅 Windows 本地回归通过，PR 与 Ubuntu CI 尚待验收；以下耗时不作为严格性能对比：
+M1～M5 已由项目维护者完成真实验收，M5 状态为 **Completed / Verified**。以下为不同阶段和环境的实际结果，耗时不作为严格性能对比：
 
 | 范围 | 结果 |
 | --- | --- |
@@ -90,8 +90,9 @@ M1～M4 已由项目维护者完成真实验收。M5 目前仅 Windows 本地回
 | Recovery | 20 项 |
 | Windows 本地回归（M5） | **49 passed in 40.83s** |
 | GitHub Actions（M4，Ubuntu 24.04、Python 3.11） | **49 passed in 10.51s** |
+| GitHub Actions（M5 合并后 main，Ubuntu 24.04、Python 3.11） | **49 passed in 8.20s** |
 
-[查看 Ubuntu CI 成功运行记录](https://github.com/8badada7/device-api-validation-lab/actions/runs/41394703270)
+[查看 M5 合并后 CI 成功运行记录](https://github.com/8badada7/device-api-validation-lab/actions/runs/41446399031)
 
 ## 已知限制
 

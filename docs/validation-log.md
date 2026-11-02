@@ -1,8 +1,8 @@
 # 验证与故障排查记录
 
-本文保留 M1～M4 的项目历史开发、验收与故障排查资料，并记录进行中的 M5 工程交付。M1～M3.5 由原 README 迁移整理，包含此前已确认的 M2.1～M2.3 验收摘要；M4 在真实验收后追加。**这不是每次测试自动生成的最新报告**；各阶段结果仅对应当时的环境、测试集合和实际操作，不应将历史故障实验或旧测试数量当作当前回归结论。
+本文保留 M1～M5 的项目开发、验收与故障排查资料，所有里程碑已完成真实验收。M1～M3.5 由原 README 迁移整理，包含此前已确认的 M2.1～M2.3 验收摘要；M4、M5 在真实验收后补充记录。**这不是每次测试自动生成的最新报告**；各阶段结果仅对应当时的环境、测试集合和实际操作，不应将历史故障实验或旧测试数量当作当前回归结论。
 
-文中保留接口契约、fixture 清理顺序、故障诊断、人工证据检查和未覆盖场景，不嵌入生成的 JSON 文件、原始日志或敏感配置。测试数量仍为 Smoke/API 29 项、Recovery 20 项，共 49 项。M5 Windows 本地回归为 `49 passed in 40.83s`；最近已验收的 GitHub Ubuntu 回归仍是 M4 的 `49 passed in 10.51s`，不代表 M5 已通过 Ubuntu CI。
+文中保留接口契约、fixture 清理顺序、故障诊断、人工证据检查和未覆盖场景，不嵌入生成的 JSON 文件、原始日志或敏感配置。测试数量仍为 Smoke/API 29 项、Recovery 20 项，共 49 项。M5 Windows 本地回归为 `49 passed in 40.83s`，合并后 main 的 GitHub Ubuntu 回归为 `49 passed in 8.20s`；M4 的 `49 passed in 10.51s` 作为此前阶段的历史结果保留。
 
 [返回项目介绍](../README.md)
 
@@ -30,9 +30,9 @@
 | M3.4 | 故障证据记录与诊断 | **Completed / Verified** |
 | M3.5 | 只读健康检查的有限重试与恢复策略验证 | **Completed / Verified** |
 | M4 | GitHub Actions CI 自动化验证 | **Completed / Verified** |
-| M5 | 测试设计与工程交付 | **In Progress**：PR 与 Ubuntu CI 待验收 |
+| M5 | 测试设计与工程交付 | **Completed / Verified** |
 
-验收依据：M1～M4 均由项目维护者完成真实验收；M5 当前仅本地回归通过，PR 与 Ubuntu CI 尚未验收。各阶段的验收与实验记录见下文。
+验收依据：M1～M5 均由项目维护者完成真实验收；M5 已通过 Windows 本地回归、PR 检查及合并后 main 的 GitHub Actions 回归。各阶段的验收与实验记录见下文。
 
 M3.3～M3.5 的第二次里程碑提交 `f103c2a` 已成功推送至 GitHub；M4 的 GitHub Actions 成功验收对应修复提交 `8f6bfff`。
 
@@ -386,12 +386,15 @@ M4 将现有 49 项测试接入 GitHub Actions，没有新增测试项或修改�
 - M4 验收时依赖版本尚未固定；该阶段结果对应当次 Windows/Ubuntu 环境，不保证所有系统、依赖组合或负载下得到相同耗时和异常表现。当前直接依赖的固定情况见 M5。
 - CI 自动运行测试与管理模拟 DUT，不代表生产级工业设备验证、真实网络丢包、断电、数据持久化或设备自主恢复已实现；只读健康检查的有限重试范围保持不变。
 
-## M5 工程交付进展（In Progress）
+## M5 工程交付验收（Completed / Verified）
 
 - **测试设计**：新增 [测试用例矩阵](test-matrix.md)，从现有 49 个 pytest test item 中归纳 12 条代表场景，覆盖等价类、边界值、状态转换及异常与恢复；核对真实函数、参数、状态码和仓库相对链接，不新增测试项。
 - **依赖管理**：仅固定 pytest==9.2.0、requests==2.34.2、Flask==3.1.3 三个直接依赖版本，尚未完整锁定传递依赖，不等同于完整环境锁定。
 - **本地验收**：项目维护者在 Windows 完成真实全量回归，结果为 `49 passed in 40.83s`，测试数量保持不变。
-- **待验收**：M5 的 PR 和 Ubuntu CI 尚未验收，因此本阶段保持 In Progress，不标记为 Completed / Verified。M4 的 Ubuntu 成功记录不能替代本阶段变更的 CI 验收。
+- **PR 验收与合并**：[PR #1](https://github.com/8badada7/device-api-validation-lab/pull/1) 的 GitHub Actions 检查通过，已成功合并至 main，合并提交为 `d1cf9de`。
+- **合并后 CI**：main 的 GitHub Actions 再次通过，结果为 `49 passed in 8.20s`。该结果属于 M5 合并后回归，区别于 M4 的 Ubuntu `49 passed in 10.51s`；M5 最终状态为 Completed / Verified。
+
+[查看 M5 合并后 main 的成功运行](https://github.com/8badada7/device-api-validation-lab/actions/runs/41446399031)
 
 ## 测试状态管理
 
@@ -439,7 +442,7 @@ M3.5 的重试函数关闭每次收到的 Response，Session 仍由调用者持�
 
 ## 已验证能力与尚未实现的功能
 
-M1～M4 已验证：
+M1～M5 已验证：
 
 - 最小 Flask DUT 提供 /health HTTP 接口。
 - Smoke/API 的 requests Client 通过配置地址发送请求，并显式传递 timeout。
@@ -460,6 +463,7 @@ M1～M4 已验证：
 - 只读健康检查在首次成功、503 后恢复、次数耗尽及不可重试响应时按规则停止；连接异常与 ReadTimeout 均保留实际异常类型，不伪造 HTTP 状态码。
 - 通过服务端实际计数核对 HTTP 场景请求次数，利用结构化证据关联每次重试决策、实际尝试与停止原因；首轮 ConnectTimeout 测试预期问题修正后，全量回归为 `49 passed in 40.23s`。
 - 在 GitHub Ubuntu 24.04、Python 3.11 上自动管理 8000 DUT、执行现有 49 项测试并清理进程，实际得到 `49 passed in 10.51s`，成功上传 JUnit XML、JSON 故障证据及两类 DUT 日志。
+- 完成 12 条代表性测试矩阵和三个直接依赖版本固定；M5 的 PR 检查通过并合并至 main，合并后 CI 得到 `49 passed in 8.20s`，传递依赖仍未完整锁定。
 
 尚未实现：
 
