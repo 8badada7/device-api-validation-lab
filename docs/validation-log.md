@@ -1,8 +1,8 @@
 # 验证与故障排查记录
 
-本文为 M1～M3.5 的项目历史开发、验收与故障排查资料，由原 README 迁移整理，并补充此前已确认的 M2.1～M2.3 验收摘要。**这不是每次测试自动生成的最新报告**；各阶段结果仅对应当时的环境、测试集合和实际操作，不应将历史故障实验或旧测试数量当作当前回归结论。
+本文为 M1～M4 的项目历史开发、验收与故障排查资料。M1～M3.5 由原 README 迁移整理，包含此前已确认的 M2.1～M2.3 验收摘要；M4 在真实验收后追加。**这不是每次测试自动生成的最新报告**；各阶段结果仅对应当时的环境、测试集合和实际操作，不应将历史故障实验或旧测试数量当作当前回归结论。
 
-文中保留接口契约、fixture 清理顺序、故障诊断、人工证据检查和未覆盖场景，不嵌入生成的 JSON 文件、原始日志或敏感配置。当前正式回归为 Smoke/API 29 项、Recovery 20 项，最近一次全量验收为 `49 passed in 40.23s`。
+文中保留接口契约、fixture 清理顺序、故障诊断、人工证据检查和未覆盖场景，不嵌入生成的 JSON 文件、原始日志或敏感配置。当前正式测试为 Smoke/API 29 项、Recovery 20 项，共 49 项。最近一次 GitHub Ubuntu 全量验收为 `49 passed in 10.51s`；Windows 正式回归与本地脚本演练结果分别保留在对应阶段，不混用环境和耗时。
 
 [返回项目介绍](../README.md)
 
@@ -29,15 +29,21 @@
 | M3.3 | 写入超时后的状态一致性与幂等性验证 | **Completed / Verified** |
 | M3.4 | 故障证据记录与诊断 | **Completed / Verified** |
 | M3.5 | 只读健康检查的有限重试与恢复策略验证 | **Completed / Verified** |
+| M4 | GitHub Actions CI 自动化验证 | **Completed / Verified** |
 
-验收依据：以上阶段均由项目维护者完成真实 HTTP 验收。M1 的正向、故障、恢复记录以及 M2.4、M3.1、M3.2、M3.3、M3.4、M3.5 的验收与实验记录见下文。
+验收依据：以上阶段均由项目维护者完成真实验收。M1 的正向、故障、恢复记录以及 M2～M4 的验收与实验记录见下文。
 
-M3.3～M3.5 的第二次里程碑提交 `f103c2a` 已成功推送至 GitHub；本次文档整理开始时，`main` 与 `origin/main` 同步。
+M3.3～M3.5 的第二次里程碑提交 `f103c2a` 已成功推送至 GitHub；M4 的 GitHub Actions 成功验收对应修复提交 `8f6bfff`。
 
 ## 目录结构与职责
 
 ```text
 device-api-validation-lab/
+├── .github/
+│   └── workflows/
+│       └── ci.yml             # GitHub Actions 执行、报告上传与最小权限
+├── scripts/
+│   └── run_ci_tests.py        # 8000 DUT 生命周期管理与 pytest 退出码传递
 ├── docs/
 │   └── validation-log.md      # 历史验收与故障排查资料
 ├── configs/
@@ -68,8 +74,10 @@ device-api-validation-lab/
 │       └── test_write_consistency.py # 写入超时后的实际状态、同值赋值幂等及读回
 ├── reports/
 │   ├── .gitkeep              # 保留报告输出目录
+│   ├── pytest-results.xml    # 脚本运行生成的 JUnit XML，由 .gitignore 排除
 │   └── evidence/             # 运行生成的 JSON 证据，由 .gitignore 排除
-├── logs/                    # Recovery 运行时生成子进程 stdout/stderr 日志
+├── logs/                    # CI 主 DUT 与 Recovery 子进程 stdout/stderr 日志
+│   ├── ci_dut.log            # CI 脚本运行时生成的 8000 DUT 日志
 │   └── .gitkeep              # 保留目录，生成的 *.log 由 .gitignore 排除
 ├── pytest.ini                # 测试发现路径、输出选项和 markers
 ├── requirements.txt          # 直接依赖，当前未固定版本
@@ -90,7 +98,7 @@ conda activate device-api-val
 python -m pip install -r requirements.txt
 ```
 
-项目维护者已确认该环境可用，验收时 Python 为 3.11.17，pytest 为 9.1.1。`requirements.txt` 当前仅列出 pytest、requests 和 Flask，尚未固定版本；重新安装依赖不保证得到与验收环境完全相同的版本。
+项目维护者已确认该环境可用，本地 Windows 验收时 Python 为 3.11.17，pytest 为 9.1.1。GitHub Actions 配置 Python 3.11，不据此推定其补丁版本和 pytest 版本与本地相同。`requirements.txt` 当前仅列出 pytest、requests 和 Flask，尚未固定版本；重新安装依赖不保证得到与验收环境完全相同的版本。
 
 ## 启动 DUT
 
@@ -125,6 +133,8 @@ python -m pytest -m smoke
 当前正式测试共 49 项，由 29 项 Smoke/API 功能测试和 20 项 Recovery 测试组成；Recovery 包含 M3.1 的 2 项、M3.2 的 4 项、M3.3 的 4 项、M3.4 的 3 项及 M3.5 新增的 7 项。故意失败实验的临时文件已删除，不计入正式测试。Recovery fixture 只清理自己创建的子进程，不停止原有 8000 服务。各阶段实际运行结果见下文。
 
 单独运行 M3.5 的 7 项测试：`python -m pytest -v tests/recovery/test_health_retry.py`。这些测试由 fixture 管理独立 18001 DUT，不需要提前启动 8000 服务。
+
+上述手工命令中的 8000 DUT 需提前启动；M4 的 `python scripts/run_ci_tests.py` 会自动管理该 DUT，并生成 JUnit XML，CI 使用此脚本运行同一套测试。Recovery 的 18001 DUT 仍由原 fixture 管理。
 
 ## /health 接口契约
 
@@ -317,6 +327,63 @@ M3.5 新增 `src/health_retry.py`，实现与 pytest、EvidenceRecorder 解耦�
 
 当前策略仅适用于本项目的只读健康检查，不自动重试写入、设备启动或校准等可能产生副作用的操作，也不代表生产级故障恢复、真实网络丢包或设备自动重启已经实现。调用者应保持 Session adapter 的额外自动重试关闭，避免底层再次重试；每次请求的 timeout、尝试次数与重试间隔不构成整个操作严格的总耗时上限。客户端 ReadTimeout 后，服务端仍可能继续处理原请求。
 
+## M4 实测记录
+
+### 设计目标与工作流架构
+
+M4 将现有 49 项测试接入 GitHub Actions，没有新增测试项或修改业务契约。新增 `.github/workflows/ci.yml` 和 `scripts/run_ci_tests.py`，工作流配置在 push 到 main、针对 main 的 pull_request，以及 workflow_dispatch 时触发，使用 Ubuntu 24.04、Python 3.11，权限仅为 `contents: read`。
+
+工作流检出仓库并安装 `requirements.txt` 依赖后，由辅助脚本启动 8000 DUT、确认就绪，再执行 `python -m pytest --junitxml=reports/pytest-results.xml`。测试结束后清理主 DUT；JUnit XML、JSON 故障证据、主 DUT 日志和 Recovery DUT 日志分别通过上传步骤保存。18001 DUT 继续由 pytest 的 Recovery fixture 独立启动和清理，CI 不额外启动该端口服务。
+
+### 本地脚本的 DUT 管理与失败传递
+
+脚本使用 `sys.executable` 和 `subprocess.Popen` 在项目根目录执行 `python -u dut/app.py`，将标准输出与错误输出合并到 `logs/ci_dut.log`，在 Runner 临时目录保存 PID。启动前检查 8000 端口；已占用时明确失败，不终止其他进程。
+
+就绪检测使用有限 HTTP 轮询：最多 60 次、设置 15 秒等待期限，每次请求 timeout 不超过 0.5 秒且受剩余等待时间限制；只在 HTTP 200、JSON 恰为 `{"status":"ok"}` 且所启动进程仍运行时认定就绪。启动失败会输出必要的日志末尾，不依赖固定 sleep 猜测服务已启动。
+
+脚本保留 pytest 的非零退出码，在 finally 中仅清理自身持有的 Popen 子进程，先 terminate 并等待，超时后 kill 再等待，确认退出。若 pytest 已成功但清理或脚本处理失败，CI 仍报错；不会用 `|| true` 或 `continue-on-error` 将 pytest 失败改成成功。
+
+### Windows 本地演练
+
+项目维护者先在 Windows 运行辅助脚本，得到 `49 passed in 39.55s`，自动生成 JUnit XML，并确认没有遗留端口监听。该结果与 M3.5 的 Windows 正式回归 `49 passed in 40.23s` 是不同运行记录，两者均保留，不用后者替代本次脚本演练结果。
+
+### 首次 GitHub 工作流解析失败与修复
+
+提交 `d595e94` 的首次 GitHub Actions 尝试报告 `Invalid workflow file`。当时 env 同时定义 `NO_PROXY` 和 `no_proxy`，GitHub 工作流校验将其识别为重复名称。失败发生在创建 Job 之前，pytest 没有运行，因此不是 49 条测试执行后失败，也未形成一次 pytest 回归结果。
+
+项目维护者亲自删除重复的 `no_proxy`，保留 `NO_PROXY` 的本地回环地址配置，并提交 `8f6bfff`。修复只针对工作流配置，不修改业务代码或弱化测试断言。该问题也说明，本地 Python/YAML 静态检查不能替代 GitHub 对工作流的实际校验。
+
+### GitHub Actions 成功验收与产物
+
+以下结果由项目维护者在 GitHub Actions 页面完成真实验收，并亲自检查报告：
+
+| 验证项目 | 实测结果 |
+| --- | --- |
+| 成功提交 | `8f6bfff` |
+| 执行环境 | Ubuntu 24.04、Python 3.11 |
+| 工作流总耗时 | 30 秒 |
+| DUT 就绪 | 第 2 次 HTTP 健康探测成功 |
+| pytest 收集 | 49 items，测试数量保持不变 |
+| pytest 回归 | `49 passed in 10.51s` |
+| 主 DUT 清理 | pytest 运行后 DUT 进程退出 |
+| Artifact 上传 | JUnit XML、JSON 故障证据、主 DUT 日志、Recovery DUT 日志四类全部成功 |
+| 人工产物检查 | 项目维护者已确认 JUnit XML 和 JSON 故障证据 |
+
+[查看本次成功运行](https://github.com/8badada7/device-api-validation-lab/actions/runs/41394703270)
+
+工作流总耗时 30 秒包含 pytest 之外的步骤；`10.51s` 是本次 pytest 报告的耗时，不将两者混作同一指标，也不将与 Windows 的差异作为严格性能对比。
+
+上传路径分别为 `reports/pytest-results.xml`、`reports/evidence/*.json`、`logs/ci_dut.log` 和 `logs/recovery_dut_*.log`。各上传步骤配置 `if: always()`，保留 7 天；缺失对应文件时明确报错，不伪造报告。上传成功不会覆盖之前步骤的失败状态；生成文件不通过 Git 提交，不在本文嵌入原始 JSON、日志、认证头或敏感信息。
+
+### 能力范围与未验证限制
+
+- 已实测验证 Windows 本地脚本管理、一次 GitHub 配置解析失败的诊断修复，以及 Ubuntu Runner 上完整的成功回归、DUT 清理和四类产物上传。
+- push、pull_request、workflow_dispatch 是已配置的触发方式；本次未提供后两种方式分别运行的验收记录，不将配置存在等同于逐一完成实测。
+- 第一次失败发生在 Job 创建之前；本次验收资料未包含故意触发 pytest FAILED 后，验证“测试失败、工作流保持失败且诊断上传仍执行”的完整分支。该行为已配置，不能据成功运行宣称失败分支也已验收。
+- 普通终止会尽量执行清理；强杀进程、Runner 中断或上传服务故障时，不能保证 fixture teardown、所有进程清理及报告上传一定完成。
+- 依赖版本未固定；当前结果对应当次 Windows/Ubuntu 环境，不保证所有系统、依赖组合或负载下得到相同耗时和异常表现。
+- CI 自动运行测试与管理模拟 DUT，不代表生产级工业设备验证、真实网络丢包、断电、数据持久化或设备自主恢复已实现；只读健康检查的有限重试范围保持不变。
+
 ## 测试状态管理
 
 Smoke/API 功能测试使用 pytest 的 setup / call / teardown 管理状态：
@@ -363,7 +430,7 @@ M3.5 的重试函数关闭每次收到的 Response，Session 仍由调用者持�
 
 ## 已验证能力与尚未实现的功能
 
-M1～M3.5 已验证：
+M1～M4 已验证：
 
 - 最小 Flask DUT 提供 /health HTTP 接口。
 - Smoke/API 的 requests Client 通过配置地址发送请求，并显式传递 timeout。
@@ -383,13 +450,14 @@ M1～M3.5 已验证：
 - 区分预期故障事件与 pytest 用例失败；在故意 AssertionError 实验中，正确记录 call 失败、teardown 通过、最终 FAILED 且阶段记录完整。
 - 只读健康检查在首次成功、503 后恢复、次数耗尽及不可重试响应时按规则停止；连接异常与 ReadTimeout 均保留实际异常类型，不伪造 HTTP 状态码。
 - 通过服务端实际计数核对 HTTP 场景请求次数，利用结构化证据关联每次重试决策、实际尝试与停止原因；首轮 ConnectTimeout 测试预期问题修正后，全量回归为 `49 passed in 40.23s`。
+- 在 GitHub Ubuntu 24.04、Python 3.11 上自动管理 8000 DUT、执行现有 49 项测试并清理进程，实际得到 `49 passed in 10.51s`，成功上传 JUnit XML、JSON 故障证据及两类 DUT 日志。
 
 尚未实现：
 
 - 写入、设备启动、校准等可能产生副作用操作的自动重试；自动业务重连以及 DUT 自主故障检测与自动恢复。当前仅实现独立的只读健康检查有限重试函数。
 - 非幂等控制指令验证、真实设备断电及数据持久化验证；当前业务状态和寄存器仍在进程内存中，尚未实现持久化存储。
 - 真实网络丢包、网络层延迟注入及受控的连接建立超时故障注入；M3.5 实际观察到 ConnectTimeout 并验证有限重试，不代表已能受控复现所有连接阶段故障。
-- CI 集成及通用 HTML/XML 测试报告生成流程；当前已实现选定 Recovery 测试的自动 JSON 证据记录。
+- 通用 HTML 测试报告生成流程；当前已实现 GitHub Actions CI、JUnit XML 和选定 Recovery 测试的自动 JSON 证据记录。
 - 完整的系统级状态隔离及多进程并发隔离。
 
 M3.1 的服务恢复由测试程序按步骤主动重启 DUT，并显式调用 `/connect`，不代表自动重连、设备自主恢复、数据持久化或真实网络丢包测试已经实现。启动时的 health 轮询仅用于判断进程就绪，不是业务请求的自动重试。

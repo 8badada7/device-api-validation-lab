@@ -20,6 +20,7 @@ DUT 是 Flask 实现的模拟设备，使用进程内存保存业务连接状态
 - **故障注入与恢复**：通过真实子进程和 HTTP 请求验证服务中断、ReadTimeout、HTTP 500，以及测试程序主动重启后的 HTTP 和业务恢复。
 - **状态一致性与测试证据**：验证写入超时后的实际状态与同值赋值的幂等效果，通过 fixture 恢复原值，并生成关联 pytest 实际阶段结果的 JSON 证据。
 - **有限重试策略**：仅对只读健康检查重试 HTTP 503、ConnectionError 和 ReadTimeout，遇到 HTTP 400/500 等不可重试响应立即停止。最大尝试次数包含首次请求，健康响应成功后停止，并通过服务端计数核对 HTTP 场景请求次数。
+- **CI 自动化验证**：GitHub Actions 在 Ubuntu 24.04、Python 3.11 中自动准备环境、启动并检查 DUT、执行原有 49 项测试，上传 JUnit XML、JSON 故障证据和日志，并清理 DUT。
 
 ## 测试架构与目录
 
@@ -31,6 +32,8 @@ DUT 是 Flask 实现的模拟设备，使用进程内存保存业务连接状态
 | `tests/api/` | API 功能、参数与边界验证 |
 | `tests/recovery/` | 独立 DUT 进程管理、故障注入、恢复与可靠性测试 |
 | `configs/` | 测试环境地址和请求 timeout |
+| `.github/workflows/ci.yml` | GitHub Actions 触发条件、执行环境和诊断文件上传 |
+| `scripts/run_ci_tests.py` | CI 中的 8000 DUT 启动、就绪检查、pytest 执行与清理 |
 | `reports/`、`logs/` | JSON 证据及子进程日志等运行产物，生成文件不纳入版本控制 |
 | `docs/` | 详细验证与故障排查记录 |
 
@@ -46,7 +49,7 @@ conda activate device-api-val
 python -m pip install -r requirements.txt
 ```
 
-已验收环境为 Python 3.11.17、pytest 9.1.1；依赖版本尚未固定。
+本地 Windows 已验收环境为 Python 3.11.17、pytest 9.1.1；依赖版本尚未固定。
 
 运行 API/Smoke 或全量回归前，在终端一启动 8000 DUT 并保持运行：
 
@@ -74,15 +77,21 @@ python -m pytest -m recovery
 
 **单独运行 Recovery 不需要启动 8000 DUT，也不要人工启动 18001 DUT。** fixture 自动启动并清理 18001 子进程，运行前该端口应空闲。
 
+GitHub Actions 会在 push 到 `main`、针对 `main` 的 pull_request，以及手动 workflow_dispatch 时触发。
+提交后可在 [Actions 页面](https://github.com/8badada7/device-api-validation-lab/actions) 查看步骤、结果及 Artifacts；CI 自动管理 8000 DUT，18001 DUT 仍由 Recovery fixture 管理。
+
 ## 最新测试结果
 
-M1～M3.5 已由项目维护者完成真实运行验收，最近一次正式全量回归结果如下：
+M1～M4 已由项目维护者完成真实验收。以下全量结果来自不同环境，耗时不作为严格性能对比：
 
 | 范围 | 结果 |
 | --- | --- |
 | Smoke/API | 29 项 |
 | Recovery | 20 项 |
-| 全量回归 | **49 passed in 40.23s** |
+| Windows 本地正式全量回归 | **49 passed in 40.23s** |
+| GitHub Actions（Ubuntu 24.04、Python 3.11） | **49 passed in 10.51s** |
+
+[查看 Ubuntu CI 成功运行记录](https://github.com/8badada7/device-api-validation-lab/actions/runs/41394703270)
 
 ## 已知限制
 
@@ -91,7 +100,7 @@ M1～M3.5 已由项目维护者完成真实运行验收，最近一次正式全�
 - 每次请求的 timeout 和尝试次数不构成整个操作严格的总耗时上限。
 - 独立进程减少测试间干扰，但固定端口及共享服务不提供完整并发隔离。
 - 服务恢复由测试程序主动重启，不代表生产级故障恢复或设备自主恢复。
-- 当前尚未建立 CI 自动化流程。
+- 依赖版本尚未固定，重新安装或不同环境下的行为仍需实际验证。
 
 ## 详细记录
 
