@@ -49,7 +49,7 @@ conda activate device-api-val
 python -m pip install -r requirements.txt
 ```
 
-本地 Windows 已验收环境为 Python 3.11.17、pytest 9.1.1；依赖版本尚未固定。
+本地 Windows 已验收 Python 3.11.17。已固定 pytest、requests、Flask 三个直接依赖版本，但尚未完整锁定传递依赖。
 
 运行 API/Smoke 或全量回归前，在终端一启动 8000 DUT 并保持运行：
 
@@ -82,14 +82,14 @@ GitHub Actions 会在 push 到 `main`、针对 `main` 的 pull_request，以及�
 
 ## 最新测试结果
 
-M1～M4 已由项目维护者完成真实验收。以下全量结果来自不同环境，耗时不作为严格性能对比：
+M1～M4 已由项目维护者完成真实验收。M5 目前仅 Windows 本地回归通过，PR 与 Ubuntu CI 尚待验收；以下耗时不作为严格性能对比：
 
 | 范围 | 结果 |
 | --- | --- |
 | Smoke/API | 29 项 |
 | Recovery | 20 项 |
-| Windows 本地正式全量回归 | **49 passed in 40.23s** |
-| GitHub Actions（Ubuntu 24.04、Python 3.11） | **49 passed in 10.51s** |
+| Windows 本地回归（M5） | **49 passed in 40.83s** |
+| GitHub Actions（M4，Ubuntu 24.04、Python 3.11） | **49 passed in 10.51s** |
 
 [查看 Ubuntu CI 成功运行记录](https://github.com/8badada7/device-api-validation-lab/actions/runs/41394703270)
 
@@ -100,8 +100,10 @@ M1～M4 已由项目维护者完成真实验收。以下全量结果来自不同
 - 每次请求的 timeout 和尝试次数不构成整个操作严格的总耗时上限。
 - 独立进程减少测试间干扰，但固定端口及共享服务不提供完整并发隔离。
 - 服务恢复由测试程序主动重启，不代表生产级故障恢复或设备自主恢复。
-- 依赖版本尚未固定，重新安装或不同环境下的行为仍需实际验证。
+- 尚未完整锁定传递依赖，重新安装或不同环境下的行为仍需实际验证。
 
 ## 详细记录
+
+[查看 12 条代表性测试用例矩阵](docs/test-matrix.md)
 
 [查看完整验证与故障排查记录](docs/validation-log.md)
